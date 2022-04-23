@@ -1,0 +1,4 @@
+bot/users.db
+venv
+.idea
+Bot/__pycache__

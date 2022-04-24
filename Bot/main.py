@@ -9,6 +9,9 @@ import os
 import speech_recognition as sr
 from pyffmpeg import FFmpeg
 import time
+from bs4 import BeautifulSoup
+import requests
+import re
 
 bot = telebot.TeleBot(config.TOKEN, parse_mode='HTML')
 recognizer = sr.Recognizer()
@@ -17,11 +20,25 @@ translator = Translator()
 
 
 
-# Handling /start command
+
+
+def parse_dict(word):
+    print(word)
+    url = "https://dic.academic.ru/searchall.php?SWord="
+    data = {'SWord': word}
+    response = requests.post(url, data=data)
+    soup = BeautifulSoup(response.content, 'html.parser')
+
+    quote_list = str(soup.find('p').get_text)
+
+    res = re.sub(r'(&amp;#; …>)', '', re.sub('\d', '', re.sub(r'(\<(/?[^>]+)>)', '', quote_list)))
+
+    return res
+# Handler /start команды
 @bot.message_handler(commands=['start'])
 def start_command(message):
     firstname = message.from_user.first_name
-    lastname=""
+    lastname = ""
     if message.from_user.last_name != None:
         lastname = message.from_user.last_name
     username = message.from_user.username
@@ -46,7 +63,6 @@ def start_command(message):
     conn.close()
 
 
-
 @bot.message_handler(commands=['help'])
 def help_command(message):
     msg_text = '\n\n<i>Доступные команды:</i>\n'
@@ -56,7 +72,7 @@ def help_command(message):
     bot.reply_to(message, msg_text, reply_markup=buttons.delete())
 
 
-# Handling /statistics command
+# Handler /statistics команды
 @bot.message_handler(commands=['statistics'])
 def stat_command(message):
     first_name = message.from_user.first_name
@@ -75,7 +91,7 @@ def stat_command(message):
     bot.send_message(chat_id, msg_text, parse_mode='html', reply_markup=buttons.delete())
 
 
-# Handling /language command
+# Handler /language команды
 @bot.message_handler(commands=['language'])
 def lang_command(message):
     chat_id = message.chat.id
@@ -103,15 +119,16 @@ def callback_handler(call):
     cursor = conn.cursor()
 
     def save_language(short):
-        bot.answer_callback_query(call.id, f'{Languages[call.data]} выбран язык. Отправь мне текстовое или голосовое сообщение')
+        bot.answer_callback_query(call.id,
+                                  f'{Languages[call.data]} выбран язык. Отправь мне текстовое или голосовое сообщение')
         cursor.execute('UPDATE users SET lang = (?) WHERE user_id = (?)', (call.data, chat_id,))
         conn.commit()
         text = f'Выбран язык <i>{Languages[call.data]}</i>. Отправь мне текстовое или голосовое сообщение'
         bot.edit_message_text(text, chat_id, call.message.id, reply_markup=buttons.settings())
 
     if call.data in ['en', 'ru', 'fr', 'de', 'pl', 'it', 'ja', 'sk', 'tr', 'fi',
-                     'kn','lv','az','sv','es','ko','da','el','et','sr',
-                     'uz','hy','be','bg','is','ky','sl','so','tg','uk',]:
+                     'kn', 'lv', 'az', 'sv', 'es', 'ko', 'da', 'el', 'et', 'sr',
+                     'uz', 'hy', 'be', 'bg', 'is', 'ky', 'sl', 'so', 'tg', 'uk', ]:
         save_language(call.data)
 
     elif call.data == "page_two":
@@ -152,11 +169,30 @@ def callback_handler(call):
             bot.answer_callback_query(call.id, 'Выбор языка')
         except:
             try:
-                # If message is audio, edit_message_text() function don't work.
-                #bot.delete_message(chat_id, call.message.id)
+
                 bot.send_message(chat_id, text, reply_markup=buttons.settings())
             except:
                 bot.answer_callback_query(call.id, 'Упс!')
+
+    elif call.data == 'dictionary':
+        try:
+            cursor.execute(f"SELECT lang FROM users WHERE user_id = ?", (chat_id,))
+            data = cursor.fetchone()
+            cursor.execute(f"SELECT result FROM users WHERE user_id = ?", (chat_id,))
+            data_text = cursor.fetchone()
+            for x in data_text:
+                text = x
+
+            for lang in data:
+                result = translator.translate(text, dest=lang).text
+
+            if len(result.split()) == 1 or lang !='ru':
+                bot.edit_message_text(f'{parse_dict(result)}\n\n Смотреть больше:\n https://dic.academic.ru/searchall.php?SWord={result.replace(" ","+")}', chat_id, call.message.id, reply_markup=buttons.dictionary())
+                bot.answer_callback_query(call.id, 'Словарь')
+            else:
+                bot.edit_message_text(f'Пожалуйста используйте для словаря одно слово\n\n <b>Также доступные команды: /help</b>', chat_id, call.message.id, reply_markup=buttons.dictionary())
+        except:
+            bot.answer_callback_query(call.id, 'Упс!')
 
     elif call.data == 'pronunciation':
         try:
@@ -175,7 +211,9 @@ def callback_handler(call):
                     bot.delete_message(chat_id, call.message.id)
                     caption = f'<i>Результат: </i>\n<b>{result.capitalize()}</b> \n\n<i>Определен:</i> <b>{detect}</b> <i>в</i> <b>{lang}</b>'
                     bot.send_audio(chat_id, open(f'{chat_id}.mp3', 'rb'), caption=caption)
-                    bot.send_message(chat_id, '<b>Продолжайте писать или нажмите:\n\n Также доступные команды: /help</b>', reply_markup=buttons.settings())
+                    bot.send_message(chat_id,
+                                     '<b>Продолжайте писать или нажмите:\n\n Также доступные команды: /help</b>',
+                                     reply_markup=buttons.settings())
                     os.remove(f'{chat_id}.mp3')
                 except:
                     bot.answer_callback_query(call.id, 'Неподдерживаемый язык')
@@ -185,7 +223,7 @@ def callback_handler(call):
     conn.close()
 
 
-# Message handler
+# Handler сообщения
 @bot.message_handler(content_types=['text'])
 def response(message):
     chat_id = message.chat.id
@@ -195,7 +233,7 @@ def response(message):
     if message.content_type == 'text':
         text = message.text
 
-    # Save a text to db
+    # Сохраняем текст в БД
     cursor.execute('UPDATE users SET result = (?) WHERE user_id = (?)', (text, chat_id,))
     conn.commit()
 
@@ -211,8 +249,10 @@ def response(message):
 
         detect = translator.detect(text).lang
         result = f'<i>Результат: </i>\n<b>{result.capitalize()}</b> \n\n<i>Определен:</i> <b>{detect}</b> <i>в</i> <b>{lang}</b>'
-        bot.send_message(chat_id,result)
-        bot.send_message(chat_id,"Выберите действия или продолжите пользоваться переводчиком: ", reply_markup=buttons.result())
+        bot.send_message(chat_id, result)
+        bot.send_message(chat_id, "Выберите действия или продолжите пользоваться переводчиком: ",
+                         reply_markup=buttons.result())
+
 
 @bot.message_handler(content_types=['voice'])
 def voice_response(message):
@@ -221,54 +261,55 @@ def voice_response(message):
     cursor = conn.cursor()
 
     try:
-      file_id = bot.get_file(message.voice.file_id)
-      voice_file = bot.download_file(file_id.file_path)
+        file_id = bot.get_file(message.voice.file_id)
+        voice_file = bot.download_file(file_id.file_path)
 
-      voice_file_path =str(file_id.file_unique_id) + ".ogg"
+        voice_file_path = str(file_id.file_unique_id) + ".ogg"
 
-      with open(voice_file_path, 'wb') as new_file:
-        new_file.write(voice_file)
+        with open(voice_file_path, 'wb') as new_file:
+            new_file.write(voice_file)
 
-      bot.reply_to(message, "Сообщение анализируется. Подождите...")
-      time.sleep(2)
+        bot.reply_to(message, "Сообщение анализируется. Подождите...")
+        time.sleep(2)
 
-      converted_voice_file_path = str(file_id.file_unique_id) + "wavedition.wav"
+        converted_voice_file_path = str(file_id.file_unique_id) + "wavedition.wav"
 
-      ff.convert(voice_file_path, converted_voice_file_path)
+        ff.convert(voice_file_path, converted_voice_file_path)
 
-      with sr.WavFile(converted_voice_file_path) as voiceFile:
-        audio = recognizer.record(voiceFile)
+        with sr.WavFile(converted_voice_file_path) as voiceFile:
+            audio = recognizer.record(voiceFile)
 
-      query = recognizer.recognize_google(audio, language="ru-RU", show_all=False).lower()
+        query = recognizer.recognize_google(audio, language="ru-RU", show_all=False).lower()
 
-      os.remove(voice_file_path)
-      os.remove(converted_voice_file_path)
+        os.remove(voice_file_path)
+        os.remove(converted_voice_file_path)
 
-      bot.reply_to(message, query)
+        bot.reply_to(message, query)
 
-      cursor.execute('UPDATE users SET result = (?) WHERE user_id = (?)', (query, chat_id,))
-      conn.commit()
+        cursor.execute('UPDATE users SET result = (?) WHERE user_id = (?)', (query, chat_id,))
+        conn.commit()
 
-      cursor.execute(f"SELECT lang FROM users WHERE user_id = ?", (chat_id,))
-      data = cursor.fetchone()
-      cursor.execute(f"SELECT result FROM users WHERE user_id = ?", (chat_id,))
-      data_text = cursor.fetchone()
+        cursor.execute(f"SELECT lang FROM users WHERE user_id = ?", (chat_id,))
+        data = cursor.fetchone()
+        cursor.execute(f"SELECT result FROM users WHERE user_id = ?", (chat_id,))
+        data_text = cursor.fetchone()
 
-      for x in data_text:
-          query = x
-      for lang in data:
-          result = translator.translate(query, dest=lang).text
+        for x in data_text:
+            query = x
+        for lang in data:
+            result = translator.translate(query, dest=lang).text
 
-          detect = translator.detect(query).lang
+            detect = translator.detect(query).lang
 
-          result = f'<i>Результат: </i>\n<b>{result.capitalize()}</b> \n\n<i>Определен:</i> <b>{detect}</b> <i>в</i> <b>{lang}</b>'
-          bot.send_message(chat_id, result)
-          bot.send_message(chat_id, "Выберите действия или продолжите пользоваться переводчиком: ", reply_markup=buttons.result())
+            result = f'<i>Результат: </i>\n<b>{result.capitalize()}</b> \n\n<i>Определен:</i> <b>{detect}</b> <i>в</i> <b>{lang}</b>'
+            bot.send_message(chat_id, result)
+            bot.send_message(chat_id, "Выберите действия или продолжите пользоваться переводчиком: ",
+                             reply_markup=buttons.result())
 
     except Exception as error:
-      bot.reply_to(message, "Произошла ошибка, текст не распознан. Повторите...")
-      os.remove(voice_file_path)
-      os.remove(converted_voice_file_path)
+        bot.reply_to(message, "Произошла ошибка, текст не распознан. Повторите...")
+        os.remove(voice_file_path)
+        os.remove(converted_voice_file_path)
 
 
 bot.polling(none_stop=True)

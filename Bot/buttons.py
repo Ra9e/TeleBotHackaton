@@ -70,12 +70,22 @@ def settings():
     return markup
 
 
-def result():
+def dictionary():
     markup = InlineKeyboardMarkup()
 
     btn1 = InlineKeyboardButton("Произношение", callback_data='pronunciation')
     btn2 = InlineKeyboardButton("Сменить язык", callback_data='settings')
     markup.add(btn1, btn2)
+
+    return markup
+
+def result():
+    markup = InlineKeyboardMarkup()
+
+    btn1 = InlineKeyboardButton("Произношение", callback_data='pronunciation')
+    btn2 = InlineKeyboardButton("Сменить язык", callback_data='settings')
+    btn3 = InlineKeyboardButton("Словарь", callback_data='dictionary')
+    markup.add(btn1, btn2, btn3)
 
     return markup
 

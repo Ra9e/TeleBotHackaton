@@ -12,6 +12,10 @@
 
 + **pyffmpeg**
 
++ **BeautifulSoup4**
+
++ **requests**
+
 ### Не забудьте ввести ваш токен в файле `config.py`
 
 ---
